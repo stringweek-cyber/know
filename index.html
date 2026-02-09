@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>괴로움이 없는 사람</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700;900&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        .emotion-bold { font-weight: 800; }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
+        .nav-active { color: #3b82f6; border-top: 2px solid #3b82f6; }
+        .scale-segment { transition: all 0.2s; }
+        .calendar-day-bold { font-weight: 900; font-size: 1.1rem; }
+    </style>
+</head>
+<body class="pb-20">
+
+    <!-- Header -->
+    <header class="bg-white border-b sticky top-0 z-10 p-4 text-center">
+        <h1 class="text-xl font-bold text-gray-800">괴로움이 없는 사람</h1>
+    </header>
+
+    <div id="app" class="max-w-md mx-auto p-4">
+        <!-- View Container -->
+        <div id="view-content"></div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-2 z-20">
+        <button onclick="changeView('noticing')" id="nav-noticing" class="flex flex-col items-center text-gray-500">
+            <i data-lucide="bell" class="w-6 h-6"></i>
+            <span class="text-xs">알아차림</span>
+        </button>
+        <button onclick="changeView('calendar')" id="nav-calendar" class="flex flex-col items-center text-gray-500">
+            <i data-lucide="calendar" class="w-6 h-6"></i>
+            <span class="text-xs">달력</span>
+        </button>
+        <button onclick="changeView('records')" id="nav-records" class="flex flex-col items-center text-gray-500">
+            <i data-lucide="bar-chart-2" class="w-6 h-6"></i>
+            <span class="text-xs">기록</span>
+        </button>
+    </nav>
+
+    <!-- Entry Modal -->
+    <div id="entry-modal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden z-30 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+            <h2 id="modal-title" class="text-lg font-bold mb-4 text-center"></h2>
+            <p class="text-sm text-gray-600 mb-2">아래 문구를 입력해주세요:</p>
+            <p class="text-blue-600 font-bold mb-4 text-center">"괴로움이 없는 사람이 되겠습니다."</p>
+            <input type="text" id="modal-input" class="w-full border rounded-lg p-2 mb-4 focus:ring-2 focus:ring-blue-400 outline-none" placeholder="문구를 입력하세요">
+            
+            <p class="text-sm text-gray-600 mb-2 text-center font-bold">척도 (1~5)</p>
+            <div class="flex w-full h-12 bg-gray-100 rounded-lg overflow-hidden mb-6 border border-gray-200">
+                <button onclick="setScale(1)" class="scale-segment flex-1 border-r border-gray-200 last:border-r-0 flex items-center justify-center font-bold text-gray-400" data-val="1">1</button>
+                <button onclick="setScale(2)" class="scale-segment flex-1 border-r border-gray-200 last:border-r-0 flex items-center justify-center font-bold text-gray-400" data-val="2">2</button>
+                <button onclick="setScale(3)" class="scale-segment flex-1 border-r border-gray-200 last:border-r-0 flex items-center justify-center font-bold text-gray-400" data-val="3">3</button>
+                <button onclick="setScale(4)" class="scale-segment flex-1 border-r border-gray-200 last:border-r-0 flex items-center justify-center font-bold text-gray-400" data-val="4">4</button>
+                <button onclick="setScale(5)" class="scale-segment flex-1 border-r border-gray-200 last:border-r-0 flex items-center justify-center font-bold text-gray-400" data-val="5">5</button>
+            </div>
+            
+            <div class="flex space-x-2">
+                <button onclick="closeModal()" class="flex-1 bg-gray-100 py-3 rounded-xl font-bold">취소</button>
+                <button onclick="saveEntry()" class="flex-1 bg-blue-500 text-white py-3 rounded-xl font-bold">기록 완료</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Calendar Detail Modal -->
+    <div id="detail-modal" class="fixed inset-0 modal-overlay flex items-center justify-center hidden z-30 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl max-h-[80vh] flex flex-col">
+            <h2 id="detail-title" class="text-lg font-bold mb-4 shrink-0"></h2>
+            <div id="detail-content" class="space-y-3 overflow-y-auto flex-1 pr-1"></div>
+            <button onclick="closeDetailModal()" class="w-full bg-gray-100 py-3 rounded-xl font-bold mt-4 shrink-0">닫기</button>
+        </div>
+    </div>
+
+    <script>
+        // State Management
+        let logs = JSON.parse(localStorage.getItem('mindfulness_logs') || '[]');
+        let customButtons = JSON.parse(localStorage.getItem('mindfulness_buttons') || '[]');
+        let currentEmotion = "";
+        let selectedScale = 3;
+        let viewDate = new Date(); // For calendar navigation
+        
+        const defaultEmotions = [
+            { name: "불안", color: "#f87171" }, { name: "화", color: "#ef4444" },
+            { name: "짜증", color: "#fb923c" }, { name: "서운함", color: "#facc15" },
+            { name: "슬픔", color: "#60a5fa" }, { name: "긴장", color: "#4ade80" },
+            { name: "죄책감", color: "#a78bfa" }, { name: "수치심", color: "#f472b6" },
+            { name: "질투", color: "#2dd4bf" }, { name: "적개심", color: "#475569" }
+        ];
+
+        // View Logic
+        function changeView(view) {
+            const content = document.getElementById('view-content');
+            document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('nav-active'));
+            document.getElementById(`nav-${view}`).classList.add('nav-active');
+
+            if (view === 'noticing') renderNoticing();
+            else if (view === 'calendar') renderCalendar();
+            else if (view === 'records') renderRecords();
+            lucide.createIcons();
+        }
+
+        // --- Noticing View ---
+        function renderNoticing() {
+            const container = document.getElementById('view-content');
+            let buttonsHtml = '<div class="grid grid-cols-1 gap-2 mb-8">'; // gap을 3에서 2로 줄임
+            
+            const allButtons = [...defaultEmotions, ...customButtons];
+            allButtons.forEach((item, index) => {
+                buttonsHtml += `
+                    <div class="flex items-center space-x-2 bg-white rounded-lg shadow-sm border border-gray-100">
+                        <button onclick="openModal('${item.name}')" class="flex-1 text-left py-2 px-4"> <!-- p-4를 py-2 px-4로 줄여 세로폭 감소 -->
+                            <span style="color: ${item.color}" class="emotion-bold text-base">${item.name}</span>을 알아차림
+                        </button>
+                        <div class="flex flex-col pr-2 border-l border-gray-50">
+                            <button onclick="moveButton(${index}, -1)" class="text-gray-300 p-0.5 hover:text-blue-500"><i data-lucide="chevron-up" class="w-4 h-4"></i></button>
+                            <button onclick="moveButton(${index}, 1)" class="text-gray-300 p-0.5 hover:text-blue-500"><i data-lucide="chevron-down" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            buttonsHtml += '</div>';
+
+            const addFormHtml = `
+                <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100 mb-6">
+                    <h3 class="text-sm font-bold text-blue-800 mb-3 flex items-center">
+                        <i data-lucide="plus-circle" class="w-4 h-4 mr-1"></i> 버튼 추가 및 위치 조정
+                    </h3>
+                    <div class="flex space-x-2">
+                        <input id="new-emotion" type="text" placeholder="예: 무기력" class="flex-1 border rounded-lg p-2 text-sm outline-none">
+                        <input id="new-color" type="color" value="#3b82f6" class="w-10 h-10 p-0 border-none rounded bg-transparent cursor-pointer">
+                        <button onclick="addButton()" class="bg-blue-500 text-white px-4 rounded-lg text-sm font-bold">추가</button>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = buttonsHtml + addFormHtml;
+            lucide.createIcons();
+        }
+
+        function openModal(emotion) {
+            currentEmotion = emotion;
+            selectedScale = 3;
+            document.getElementById('modal-title').innerText = `${emotion}을 알아차림`;
+            document.getElementById('modal-input').value = "";
+            document.getElementById('entry-modal').classList.remove('hidden');
+            updateScaleUI();
+        }
+
+        function setScale(val) {
+            selectedScale = val;
+            updateScaleUI();
+        }
+
+        function updateScaleUI() {
+            document.querySelectorAll('.scale-segment').forEach(btn => {
+                const val = parseInt(btn.dataset.val);
+                if(val <= selectedScale) {
+                    btn.classList.add('bg-blue-500', 'text-white');
+                    btn.classList.remove('text-gray-400');
+                } else {
+                    btn.classList.remove('bg-blue-500', 'text-white');
+                    btn.classList.add('text-gray-400');
+                }
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('entry-modal').classList.add('hidden');
+        }
+
+        function saveEntry() {
+            const inputText = document.getElementById('modal-input').value.trim();
+            if (inputText.length === 0) {
+                alert("기록을 위해 내용을 입력해주세요.");
+                return;
+            }
+
+            const newLog = {
+                id: Date.now(),
+                emotion: currentEmotion,
+                scale: selectedScale,
+                timestamp: new Date().toISOString()
+            };
+
+            logs.push(newLog);
+            localStorage.setItem('mindfulness_logs', JSON.stringify(logs));
+            closeModal();
+            alert("기록되었습니다."); 
+        }
+
+        function addButton() {
+            const name = document.getElementById('new-emotion').value.trim();
+            const color = document.getElementById('new-color').value;
+            if (name) {
+                customButtons.push({ name, color });
+                localStorage.setItem('mindfulness_buttons', JSON.stringify(customButtons));
+                renderNoticing();
+            }
+        }
+
+        function moveButton(index, direction) {
+            let all = [...defaultEmotions, ...customButtons];
+            const target = index + direction;
+            if (target >= 0 && target < all.length) {
+                const temp = all[index];
+                all[index] = all[target];
+                all[target] = temp;
+                
+                const newCustoms = all.filter(item => !defaultEmotions.some(d => d.name === item.name));
+                customButtons = newCustoms;
+                localStorage.setItem('mindfulness_buttons', JSON.stringify(customButtons));
+                renderNoticing();
+            }
+        }
+
+        // --- Calendar View ---
+        function prevMonth() {
+            viewDate.setMonth(viewDate.getMonth() - 1);
+            renderCalendar();
+        }
+
+        function nextMonth() {
+            viewDate.setMonth(viewDate.getMonth() + 1);
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const container = document.getElementById('view-content');
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
+            
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            let calendarHtml = `
+                <div class="bg-white rounded-2xl p-4 shadow-sm mb-4">
+                    <div class="flex justify-between items-center mb-6">
+                        <button onclick="prevMonth()" class="p-2 hover:bg-gray-100 rounded-full"><i data-lucide="chevron-left"></i></button>
+                        <h2 class="text-center font-bold text-xl">${year}년 ${month + 1}월</h2>
+                        <button onclick="nextMonth()" class="p-2 hover:bg-gray-100 rounded-full"><i data-lucide="chevron-right"></i></button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-0 text-center text-xs font-bold mb-0 border-t border-l border-gray-200">
+                        <div class="text-red-500 py-2 border-r border-b border-gray-200">일</div>
+                        <div class="py-2 border-r border-b border-gray-200">월</div>
+                        <div class="py-2 border-r border-b border-gray-200">화</div>
+                        <div class="py-2 border-r border-b border-gray-200">수</div>
+                        <div class="py-2 border-r border-b border-gray-200">목</div>
+                        <div class="py-2 border-r border-b border-gray-200">금</div>
+                        <div class="text-blue-500 py-2 border-r border-b border-gray-200">토</div>
+                    </div>
+                    <div class="grid grid-cols-7 gap-0 text-center border-l border-gray-100">
+            `;
+
+            for (let i = 0; i < firstDay; i++) {
+                calendarHtml += '<div class="h-20 border-r border-b border-gray-100 bg-gray-50/30"></div>';
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dailyLogs = logs.filter(log => log.timestamp.startsWith(dateStr));
+                const count = dailyLogs.length;
+                const dayOfWeek = new Date(year, month, day).getDay();
+                
+                let textColor = "text-gray-800";
+                if (dayOfWeek === 0) textColor = "text-red-500";
+                if (dayOfWeek === 6) textColor = "text-blue-500";
+
+                calendarHtml += `
+                    <div onclick="showDayDetail('${dateStr}')" class="h-20 border-r border-b border-gray-200 flex flex-col items-center justify-start pt-2 cursor-pointer hover:bg-blue-50 transition-colors">
+                        <span class="calendar-day-bold ${textColor}">${day}</span>
+                        <div class="mt-1 h-6 flex items-center justify-center w-full">
+                            ${count > 0 ? `<span class="bg-blue-500 text-white rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm">${count}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 나머지 빈 칸 채우기
+            const totalCells = firstDay + daysInMonth;
+            const remaining = (7 - (totalCells % 7)) % 7;
+            for (let i = 0; i < remaining; i++) {
+                calendarHtml += '<div class="h-20 border-r border-b border-gray-100 bg-gray-50/30"></div>';
+            }
+
+            calendarHtml += '</div></div>';
+            container.innerHTML = calendarHtml;
+            lucide.createIcons();
+        }
+
+        function showDayDetail(dateStr) {
+            const dayLogs = logs.filter(log => log.timestamp.startsWith(dateStr))
+                                .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const detailModal = document.getElementById('detail-modal');
+            const detailTitle = document.getElementById('detail-title');
+            const detailContent = document.getElementById('detail-content');
+
+            detailTitle.innerText = `${dateStr} 알아차림`;
+            
+            if (dayLogs.length === 0) {
+                detailContent.innerHTML = '<p class="text-center text-gray-400 py-12">기록된 알아차림이 없습니다.</p>';
+            } else {
+                let html = '';
+                dayLogs.forEach(log => {
+                    const timeStr = new Date(log.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    html += `
+                        <div class="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100 shadow-sm">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-gray-800 text-lg">${log.emotion}</span>
+                                <span class="text-xs text-gray-400">${timeStr}</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs text-gray-500 font-medium">척도</span>
+                                <span class="bg-blue-100 text-blue-600 font-black px-3 py-1 rounded-lg text-sm">${log.scale}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                detailContent.innerHTML = html;
+            }
+            
+            detailModal.classList.remove('hidden');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        // --- Records View ---
+        function renderRecords() {
+            const container = document.getElementById('view-content');
+            container.innerHTML = `
+                <div class="bg-white rounded-2xl p-4 shadow-sm mb-4">
+                    <h2 class="font-bold text-lg mb-4 flex items-center">
+                        <i data-lucide="trending-up" class="w-5 h-5 mr-2 text-blue-500"></i> 알아차림 그래프
+                    </h2>
+                    <canvas id="mindChart" width="400" height="300"></canvas>
+                    <p class="text-xs text-gray-400 mt-6 text-center leading-relaxed">
+                        최근 30일 동안의 일일 알아차림 횟수 기록입니다.<br>
+                        꾸준한 알아차림은 괴로움에서 벗어나는 첫걸음입니다.
+                    </p>
+                </div>
+            `;
+
+            const labels = [];
+            const counts = [];
+            
+            for (let i = 29; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dateStr = d.toISOString().split('T')[0];
+                
+                labels.push(d.getDate() + '일');
+                const dailyLogs = logs.filter(log => log.timestamp.startsWith(dateStr));
+                counts.push(dailyLogs.length);
+            }
+
+            const ctx = document.getElementById('mindChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '알차림 횟수',
+                        data: counts,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 2,
+                        pointBackgroundColor: '#3b82f6',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { 
+                            beginAtZero: true, 
+                            ticks: { stepSize: 1, precision: 0 },
+                            grid: { color: '#f1f5f9' } 
+                        },
+                        x: { 
+                            grid: { display: false },
+                            ticks: {
+                                callback: function(value, index) {
+                                    return index % 5 === 0 ? this.getLabelForValue(value) : '';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            lucide.createIcons();
+        }
+
+        // Init
+        window.onload = () => {
+            changeView('noticing');
+        };
+    </script>
+</body>
+</html>
