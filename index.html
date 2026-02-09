@@ -81,11 +81,8 @@
     <script>
         // State Management
         let logs = JSON.parse(localStorage.getItem('mindfulness_logs') || '[]');
-        let customButtons = JSON.parse(localStorage.getItem('mindfulness_buttons') || '[]');
-        let currentEmotion = "";
-        let selectedScale = 3;
-        let viewDate = new Date(); 
         
+        // Initial setup for emotions
         const defaultEmotions = [
             { name: "불안", color: "#f87171" }, { name: "화", color: "#ef4444" },
             { name: "짜증", color: "#fb923c" }, { name: "서운함", color: "#facc15" },
@@ -93,6 +90,17 @@
             { name: "죄책감", color: "#a78bfa" }, { name: "수치심", color: "#f472b6" },
             { name: "질투", color: "#2dd4bf" }, { name: "적개심", color: "#475569" }
         ];
+        
+        // Load combined emotions or initialize with defaults
+        let emotions = JSON.parse(localStorage.getItem('mindfulness_emotions') || 'null');
+        if (!emotions) {
+            emotions = [...defaultEmotions];
+            localStorage.setItem('mindfulness_emotions', JSON.stringify(emotions));
+        }
+
+        let currentEmotion = "";
+        let selectedScale = 3;
+        let viewDate = new Date(); 
 
         function changeView(view) {
             const content = document.getElementById('view-content');
@@ -110,12 +118,11 @@
             const container = document.getElementById('view-content');
             let buttonsHtml = '<div class="grid grid-cols-2 gap-3 mb-8">'; 
             
-            const allButtons = [...defaultEmotions, ...customButtons];
-            allButtons.forEach((item, index) => {
+            emotions.forEach((item, index) => {
                 buttonsHtml += `
                     <div class="relative flex flex-col items-center bg-white rounded-2xl shadow-sm border overflow-hidden" style="background-color: ${item.color}15; border-color: ${item.color}40">
-                        <button onclick="openModal('${item.name}')" class="w-full py-5 px-2 flex flex-col items-center justify-center text-center">
-                            <span style="color: ${item.color}" class="emotion-bold text-xl leading-tight mb-1">${item.name}</span>
+                        <button onclick="openModal('${item.name}')" class="w-full py-5 px-2 flex flex-col items-center justify-center text-center text-ellipsis overflow-hidden">
+                            <span style="color: ${item.color}" class="emotion-bold text-xl leading-tight mb-1 truncate w-full">${item.name}</span>
                             <span class="text-[10px] text-gray-500 font-medium">알아차림</span>
                         </button>
                         <div class="absolute top-1 right-1 flex flex-col space-y-0.5">
@@ -178,7 +185,6 @@
         function saveEntry() {
             const inputText = document.getElementById('modal-input').value.trim();
             if (inputText.length === 0) {
-                alert("기록을 위해 내용을 입력해주세요.");
                 return;
             }
 
@@ -192,30 +198,35 @@
             logs.push(newLog);
             localStorage.setItem('mindfulness_logs', JSON.stringify(logs));
             closeModal();
-            alert("기록되었습니다."); 
+            changeView('noticing'); 
+        }
+
+        function deleteLog(id, dateStr) {
+            logs = logs.filter(log => log.id !== id);
+            localStorage.setItem('mindfulness_logs', JSON.stringify(logs));
+            showDayDetail(dateStr); 
+            renderCalendar(); 
         }
 
         function addButton() {
             const name = document.getElementById('new-emotion').value.trim();
             const color = document.getElementById('new-color').value;
             if (name) {
-                customButtons.push({ name, color });
-                localStorage.setItem('mindfulness_buttons', JSON.stringify(customButtons));
+                emotions.push({ name, color });
+                localStorage.setItem('mindfulness_emotions', JSON.stringify(emotions));
                 renderNoticing();
+                document.getElementById('new-emotion').value = "";
             }
         }
 
         function moveButton(index, direction) {
-            let all = [...defaultEmotions, ...customButtons];
             const target = index + direction;
-            if (target >= 0 && target < all.length) {
-                const temp = all[index];
-                all[index] = all[target];
-                all[target] = temp;
+            if (target >= 0 && target < emotions.length) {
+                const temp = emotions[index];
+                emotions[index] = emotions[target];
+                emotions[target] = temp;
                 
-                const newCustoms = all.filter(item => !defaultEmotions.some(d => d.name === item.name));
-                customButtons = newCustoms;
-                localStorage.setItem('mindfulness_buttons', JSON.stringify(customButtons));
+                localStorage.setItem('mindfulness_emotions', JSON.stringify(emotions));
                 renderNoticing();
             }
         }
@@ -313,9 +324,14 @@
                                 <span class="font-bold text-gray-800 text-lg">${log.emotion}</span>
                                 <span class="text-xs text-gray-400">${timeStr}</span>
                             </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="text-xs text-gray-500 font-medium">척도</span>
-                                <span class="bg-blue-100 text-blue-600 font-black px-3 py-1 rounded-lg text-sm">${log.scale}</span>
+                            <div class="flex items-center space-x-3">
+                                <div class="flex items-center space-x-1">
+                                    <span class="text-[10px] text-gray-400 font-medium">척도</span>
+                                    <span class="bg-blue-100 text-blue-600 font-black px-2 py-0.5 rounded text-xs">${log.scale}</span>
+                                </div>
+                                <button onclick="deleteLog(${log.id}, '${dateStr}')" class="text-gray-300 hover:text-red-500 transition-colors p-1">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
                             </div>
                         </div>
                     `;
@@ -324,6 +340,7 @@
             }
             
             detailModal.classList.remove('hidden');
+            lucide.createIcons(); 
         }
 
         function closeDetailModal() {
